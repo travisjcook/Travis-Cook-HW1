@@ -1,0 +1,9 @@
+HW#1 - Travis Cook
+========================================================
+
+# This is my answer to the first part of the assignment
+
+dbGetQuery(geo_con, "SELECT gse.gse, gse.title, gpl.gpl, gpl.manufacturer, gpl.description FROM (gse JOIN gse_gpl ON gse.gse=gse_gpl.gse) j JOIN gpl ON j.gpl=gpl.gpl WHERE gse.contact LIKE '%Yale%' AND gse.title LIKE '%HCV%' AND gpl.manufacturer LIKE '%Illumina%'")
+
+# This is my answer to the second part of the assignment
+
