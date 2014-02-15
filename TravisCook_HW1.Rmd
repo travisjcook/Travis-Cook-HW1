@@ -1,9 +1,101 @@
 HW#1 - Travis Cook
 ========================================================
 
+### Comments ###
+1. I think your R code should be enclosed within ```{r}  <Your R code here> ``` so that when your .Rmd file is run (you can do so by clicking on “the Knit HTML” tab in RStudio) it will be recognized as R code and the code will run to generate output; otherwise, it will just appear as it is in the resulting HTML page. 
+2. You should also include R code to load the packages and datasets that your R function (in this case, it’s the "dbGetQuery" function) depends on to ensure that your function can run.
+3. I have added some modification to your code that reflects my points in (1) and (2) above. Explanation of what each code chunk does is given before each chunk.  
+
 # This is my answer to the first part of the assignment
 
-dbGetQuery(geo_con, "SELECT gse.gse, gse.title, gpl.gpl, gpl.manufacturer, gpl.description FROM (gse JOIN gse_gpl ON gse.gse=gse_gpl.gse) j JOIN gpl ON j.gpl=gpl.gpl WHERE gse.contact LIKE '%Yale%' AND gse.title LIKE '%HCV%' AND gpl.manufacturer LIKE '%Illumina%'")
+Install the GEOmetadb package from Bioconductor. You only need to install the package once; the `eval=FALSE` option tells the program not to evaluate (i.e. run) the code within this code chunk. We will put this code here anyway for reproducibility purpose.
+
+```{r, eval=FALSE}
+source("http://bioconductor.org/biocLite.R")
+biocLite("GEOmetadb")
+```
+
+Load the package. The GEOmetadb package contains functions to query metadata describing microarray and other high throughput gene expression datasets uploaded to the NCBI Gene Expression Omnibus (GEO) database repository. More information about the GEOmetadb package can be found by typing ?GEOmetadb or through its [vignettes](http://www.bioconductor.org/packages/2.13/bioc/html/GEOmetadb.html).
+
+```{r, message=FALSE}
+library("GEOmetadb")
+```
+
+Everytime you run the code below, the most up-to-date version of the database (of metadata) will be downloaded and uncompressed; the default filename of the database is "GEOmetadb.sqlite". Again you only need to run this code once (at least when working on this assignment). I am assuming you have already run this code and thus have a copy of "GEOmetadb.sqlite" on your computer (hence the `eval=FALSE` option).
+
+```{r eval=FALSE}
+getSQLiteFile()  
+```
+
+The `SQLite()` function initializes the SQLite engine in R (I think). Then using the `dbConnect()` function, a connection to the "GEOmetadb.sqlite" database is opened. The connection to the database is assigned the name `geo_con`. 
+
+```{r}
+geo_con <- dbConnect(SQLite(),'GEOmetadb.sqlite')
+```
+
+Now we can start querying the database! Yay!
+A few comments regarding your query below: note that there can be various names for HCV e.g. Hepatitis C. Your query below will miss the case where the GSE title has "Hepatitis C" in it in lieu of "HCV". I have added modification to your code below to capture this case that you might miss. In the future, I guess we just have to think of all possible names that can arise to capture all cases. Also, I think the gpl.technology entry contains more relevant description of the platform used compared to gpl.description. In fact, gpl.description is supposed to contain "additional descriptive information not captured in another field", as explained [here](http://gbnci.abcc.ncifcrf.gov/geo/geo_help.php#description).
+
+```{r}
+dbGetQuery(geo_con, "SELECT gse.gse, gse.title, gpl.gpl, gpl.manufacturer, gpl.technology FROM (gse JOIN gse_gpl ON gse.gse=gse_gpl.gse) j JOIN gpl ON j.gpl=gpl.gpl WHERE gse.contact LIKE '%Yale%' AND (gse.title LIKE '%HCV%' OR gse.title LIKE '%Hepatitis C%') AND gpl.manufacturer LIKE '%Illumina%'")
+```
 
 # This is my answer to the second part of the assignment
+
+I am sorry that you did not figure out part 2 of the assignment. I guess I will include what I did for your reference. Take it with a grain of salt though, because I am not sure if this is the most succinct way to code things up.
+
+We are asked to do the same query in part 1 but using the `data.table` package. Note that `data.table` is a type of data structure in R. The `data.table` package contains functions to work with `data.table`s.
+
+Install the package. You only need to do this once. I am putting this code here for reproducibility purpose. 
+
+```{r, eval=FALSE}
+install.packages("data.table")
+```
+
+Load the package into `R`.
+
+```{r}
+library(data.table)
+```
+
+In the code chunk below, I exported the gse, gpl and gse_gpl tables from the GEOmetadb.sqlite database with the `dbReadTable()` function. By default, the function returns a `data.frame`, which is yet another type of data structure in `R` (it is not as efficient as `data.table`s for storing large datasets). But we want it to be in the `data.table` format, so I use `data.table()` function to convert from the `data.frame` format into the `data.table` format.
+
+```{r}
+gse <- data.table(dbReadTable(con=geo_con, name="gse", row.names=FALSE, header=TRUE, sep="\t"))
+gpl <- data.table(dbReadTable(con=geo_con, name="gpl", row.names=FALSE, header=TRUE, sep="\t"))
+gse_gpl <- data.table(dbReadTable(con=geo_con, name="gse_gpl", row.names=FALSE, header=TRUE, sep="\t"))
+```
+
+We need to merge the gse, gpl and gse_gpl data tables into one table before we can extract the information we want in one step. Because some of the column names in the gse and gpl tables are the same, to avoid confusion after merging the tables, I prefix the column names in each table by the name of the table (e.g. change the ID column name in the gse table into gse.ID). The `sapply()` function takes each column name of the table and prefix it with the name of the table. The `setnames` function updates the column names of the tables.
+
+```{r}
+setnames(gse, sapply(colnames(gse), FUN=function(x) {paste0("gse.", x)}))
+setnames(gpl, sapply(colnames(gpl), FUN=function(x) {paste0("gpl.", x)}))
+```
+
+The merging is a two-step process. First we merge the gse and gse_gpl tables using the gse column as a key. Then we merge the resulting table with the gpl table using the gpl column as a key. I first set a key which is the column to merge two tables on using the `setkey()` function. Then I did an inner join (a type of merging) between the two tables, which means merge and return only the rows which have key values in common. The inner join operation can be done using the subset operator `[]` and specifying `nomatch=0` (which means not to return rows that do not have key values in common). 
+
+```{r}
+## Set keys to merge gse and gse_gpl tables
+setkey(gse, "gse.gse")
+setkey(gse_gpl, "gse")
+
+## Merge gse and gse_gpl tables 
+j <- gse[gse_gpl, nomatch=0]
+
+## Set keys to merge j and gpl tables
+setkey(j, "gpl")
+setkey(gpl, "gpl.gpl")
+
+## Merge j and gpl tables
+k <- gpl[j, nomatch=0]
+```
+
+Finally proceed with the query. The code below allows us to choose rows that fulfill the gse.title, gpl.manufacturer and gse.contact criteria and return the columns listed in `list()`.
+
+```{r}
+k[gse.title %like% "HCV|Hepatitis C" & gpl.manufacturer %like% "Illumina" & gse.contact %like% "Yale", list(gse.title, gse.gse, gpl.gpl, gpl.technology)]
+```
+
+
 
